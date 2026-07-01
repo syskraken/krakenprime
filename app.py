@@ -23,6 +23,7 @@ import sys
 import math
 import random
 import argparse
+import shutil
 from PIL import Image
 import pytesseract
 
@@ -87,6 +88,48 @@ if sys.platform == "win32":
     local_adb = os.path.join(BASE_DIR, "adb.exe")
     if os.path.exists(local_adb):
         ADB = local_adb
+
+# ── ADB resolution ───────────────────────────────────────────
+def _resolve_adb():
+    if sys.platform != "win32":
+        return "adb"
+
+    # Persistent location so it survives across runs regardless of
+    # where the user placed/moved the exe.
+    dest_dir = os.path.join(os.environ.get("LOCALAPPDATA", BASE_DIR), "KrakenPrime", "adb")
+    dest_adb = os.path.join(dest_dir, "adb.exe")
+
+    if os.path.isfile(dest_adb):
+        return dest_adb
+
+    # First run (or frozen exe): copy bundled adb out of _MEIPASS.
+    src_dir = getattr(sys, "_MEIPASS", BASE_DIR)
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+        for fname in ("adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll"):
+            src = os.path.join(src_dir, fname)
+            if os.path.isfile(src):
+                shutil.copy2(src, os.path.join(dest_dir, fname))
+        if os.path.isfile(dest_adb):
+            return dest_adb
+    except Exception as e:
+        print(f"  [!] Could not extract bundled adb.exe: {e}")
+
+    # Last resort: local folder next to the exe, then system PATH.
+    local_adb = os.path.join(BASE_DIR, "adb.exe")
+    if os.path.isfile(local_adb):
+        return local_adb
+    return "adb"
+
+ADB = _resolve_adb()
+
+if ADB == "adb" and shutil.which("adb") is None:
+    print()
+    print("  [!] ADB not found. Please re-run setup.bat, or make sure")
+    print("      adb.exe is in the same folder as KrakenPrime.exe.")
+    print()
+    input("  Press ENTER to exit...")
+    sys.exit(1)
 
 DEVICE    = "127.0.0.1:5555"
 

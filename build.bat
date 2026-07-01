@@ -85,6 +85,18 @@ if exist "%~dp0icon.ico" (
     echo  [~] No icon file found - building without icon.
 )
 
+:: ── Copy ADB alongside the built exe ──────────────────────────
+echo.
+echo  [~] Copying ADB tools next to the exe...
+copy "%~dp0adb.exe"          "%~dp0dist\adb.exe"          >nul 2>&1
+copy "%~dp0AdbWinApi.dll"    "%~dp0dist\AdbWinApi.dll"    >nul 2>&1
+copy "%~dp0AdbWinUsbApi.dll" "%~dp0dist\AdbWinUsbApi.dll" >nul 2>&1
+if exist "%~dp0dist\adb.exe" (
+    echo  [OK] adb.exe copied to dist\
+) else (
+    echo  [!] adb.exe not found in project folder — run setup.bat first.
+)
+
 :: ── Build the EXE ─────────────────────────────────────────────
 echo.
 echo  [4/4] Building EXE (this takes 2-5 minutes)...
@@ -102,6 +114,9 @@ echo.
     --add-data "%~dp0templates;templates" ^
     --add-data "!CTK_PATH!;customtkinter" ^
     --add-data "!CERTIFI_PATH!;certifi" ^
+    --add-binary "%~dp0adb.exe;." ^
+    --add-binary "%~dp0AdbWinApi.dll;." ^
+    --add-binary "%~dp0AdbWinUsbApi.dll;." ^
     --hidden-import requests ^
     --hidden-import certifi ^
     --hidden-import urllib3 ^

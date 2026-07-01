@@ -38,7 +38,32 @@ ACCENT_HOVER = "#c5663f"   # darker, for hover states
 ACCENT_DARK  = "#7a4530"   # dark filled variant (toolbar buttons)
 
 # ── Config ────────────────────────────────────────────────────
-ADB          = "adb"
+BASE_DIR = os.path.dirname(os.path.abspath(sys.argv[0]))
+
+def _resolve_adb():
+    if sys.platform != "win32":
+        return "adb"
+    dest_dir = os.path.join(os.environ.get("LOCALAPPDATA", BASE_DIR), "KrakenPrime", "adb")
+    dest_adb = os.path.join(dest_dir, "adb.exe")
+    if os.path.isfile(dest_adb):
+        return dest_adb
+    src_dir = getattr(sys, "_MEIPASS", BASE_DIR)
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+        for fname in ("adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll"):
+            src = os.path.join(src_dir, fname)
+            if os.path.isfile(src):
+                shutil.copy2(src, os.path.join(dest_dir, fname))
+        if os.path.isfile(dest_adb):
+            return dest_adb
+    except Exception as e:
+        print(f"[overlay] Could not extract bundled adb.exe: {e}")
+    local_adb = os.path.join(BASE_DIR, "adb.exe")
+    if os.path.isfile(local_adb):
+        return local_adb
+    return "adb"
+
+ADB = _resolve_adb()
 DEVICE       = "127.0.0.1:5555"
 # These describe the LDPlayer / device resolution — the coordinate
 # space that ADB taps are ultimately sent in. They stay fixed

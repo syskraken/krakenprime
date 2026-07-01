@@ -7,6 +7,7 @@ import json
 import time
 import re
 import webbrowser
+import shutil
 from PIL import Image, ImageTk, ImageDraw
 import subprocess
 from tkinter import messagebox, Canvas, Scrollbar
@@ -81,6 +82,47 @@ def _script_path(filename: str) -> str:
     """
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, filename)
+
+BASE_DIR = os.path.dirname(os.path.abspath(sys.argv[0])) if getattr(sys, "frozen", False) \
+    else os.path.dirname(os.path.abspath(__file__))
+
+
+def _script_path(filename: str) -> str:
+    """Return absolute path to a bundled .py script.
+
+    When frozen, PyInstaller extracts data files to sys._MEIPASS (the temp
+    folder).  In dev mode the scripts live next to gui_app.py.
+    """
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, filename)
+
+
+def _resolve_adb():
+    if sys.platform != "win32":
+        return "adb"
+    dest_dir = os.path.join(os.environ.get("LOCALAPPDATA", BASE_DIR), "KrakenPrime", "adb")
+    dest_adb = os.path.join(dest_dir, "adb.exe")
+    if os.path.isfile(dest_adb):
+        return dest_adb
+    src_dir = getattr(sys, "_MEIPASS", BASE_DIR)
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+        for fname in ("adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll"):
+            src = os.path.join(src_dir, fname)
+            if os.path.isfile(src):
+                shutil.copy2(src, os.path.join(dest_dir, fname))
+        if os.path.isfile(dest_adb):
+            return dest_adb
+    except Exception as e:
+        print(f"  [!] Could not extract bundled adb.exe: {e}")
+    local_adb = os.path.join(BASE_DIR, "adb.exe")
+    if os.path.isfile(local_adb):
+        return local_adb
+    return "adb"
+
+
+ADB = _resolve_adb()
+
 
 # Set theme and appearance
 ctk.set_appearance_mode("dark")
@@ -1105,11 +1147,8 @@ class ProfessionalCoCBot(ctk.CTk):
     def _grab_adb_screenshot(self):
         """Take a live screenshot from LDPlayer via ADB. Returns a PIL Image or None."""
         try:
-            # Find adb.exe — prefer local copy next to the exe, fall back to PATH
-            adb = os.path.join(self.app_dir, "adb.exe") if os.path.exists(
-                os.path.join(self.app_dir, "adb.exe")) else "adb"
             result = subprocess.run(
-                [adb, "-s", "127.0.0.1:5555", "exec-out", "screencap", "-p"],
+                [ADB, "-s", "127.0.0.1:5555", "exec-out", "screencap", "-p"],
                 capture_output=True, timeout=12, creationflags=_NO_WINDOW
             )
             if result.stdout and len(result.stdout) > 1000:
