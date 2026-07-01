@@ -10,6 +10,7 @@ import webbrowser
 from PIL import Image, ImageTk, ImageDraw
 import subprocess
 from tkinter import messagebox, Canvas, Scrollbar
+from telemetry_client import TelemetryClient
 
 # Suppress terminal flicker on Windows — every subprocess call (ADB, overlay,
 # app.py itself) uses this flag so no black cmd window ever flashes on screen.
@@ -130,6 +131,13 @@ class ProfessionalCoCBot(ctk.CTk):
         
         # Initialize with Dashboard
         self.select_frame_by_name("dashboard")
+        self.telemetry = TelemetryClient(self, self.app_dir)
+        self.telemetry.start()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _on_close(self):
+        self.telemetry.stop()
+        self.destroy()
 
     def _set_window_icon(self):
         icon_path = os.path.join(self.resource_dir, "icon.ico")
@@ -682,13 +690,20 @@ class ProfessionalCoCBot(ctk.CTk):
     def _update_button_states(self):
         is_configured = self.config.get("setup_complete", False)
         
-        # Check if all required fields are filled for the setup button
-        has_troops = (self.config.get("num_troop_slots") and 
-                      self.config.get("num_troops_total") and 
-                      self.config.get("num_heroes"))
-        has_spells = (self.config.get("num_rage") and 
-                      self.config.get("rage_delay"))
-        has_loot_target = self.config.get("min_gold")
+        # Check if all required fields are filled for the setup button.
+        # Use "is not None" instead of truthy checks so a legitimately-entered
+        # 0 (e.g. "I have 0 heroes") still counts as filled in, rather than
+        # being treated the same as an empty/missing field.
+        def _is_filled(key):
+            val = self.config.get(key)
+            return val is not None and val != ""
+
+        has_troops = (_is_filled("num_troop_slots") and
+                      _is_filled("num_troops_total") and
+                      _is_filled("num_heroes"))
+        has_spells = (_is_filled("num_rage") and
+                      _is_filled("rage_delay"))
+        has_loot_target = _is_filled("min_gold")
         
         setup_ready = has_troops and has_spells and has_loot_target
         

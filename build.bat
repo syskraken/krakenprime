@@ -6,15 +6,12 @@ color 0E
 
 echo.
 echo  ============================================================
-echo    KRAKEN PRIME - Build Standalone EXE
+echo    KRAKEN PRIME
 echo  ============================================================
 echo.
-echo  Compiles gui_app.py + app.py + deploy_overlay.py into a
-echo  single KrakenPrime.exe. No Python needed on end-user PCs.
+echo  Compiles the program into a single executable file
+echo  KrakenPrime.exe. No Python needed on end-user PCs.
 echo.
-echo  Fixes included:
-echo    - No terminal windows flashing during ADB calls
-echo    - No console window on launch
 echo.
 echo  Press any key to start the build...
 pause >nul
@@ -58,6 +55,16 @@ if not defined CTK_PATH (
 )
 echo  [OK] customtkinter: !CTK_PATH!
 
+
+for /f "delims=" %%i in ('%PYTHON_CMD% -c "import certifi; print(certifi.where())"') do (
+    set CERTIFI_PATH=%%i
+)
+if not defined CERTIFI_PATH (
+    echo  [!] Could not locate certifi. Run: pip install certifi
+    pause & exit /b 1
+)
+echo  [OK] certifi: !CERTIFI_PATH!
+
 :: ── Convert icon.png to icon.ico if needed ───────────────────
 echo.
 echo  [3/4] Preparing icon...
@@ -94,6 +101,10 @@ echo.
     --add-data "%~dp0icon.png;." ^
     --add-data "%~dp0templates;templates" ^
     --add-data "!CTK_PATH!;customtkinter" ^
+    --add-data "!CERTIFI_PATH!;certifi" ^
+    --hidden-import requests ^
+    --hidden-import certifi ^
+    --hidden-import urllib3 ^
     --hidden-import customtkinter ^
     --hidden-import PIL._tkinter_finder ^
     --hidden-import cv2 ^

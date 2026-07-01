@@ -40,28 +40,41 @@ ACCENT_DARK  = "#7a4530"   # dark filled variant (toolbar buttons)
 # ── Config ────────────────────────────────────────────────────
 ADB          = "adb"
 DEVICE       = "127.0.0.1:5555"
+# These describe the LDPlayer / device resolution — the coordinate
+# space that ADB taps are ultimately sent in. They stay fixed
+# regardless of the size of the window on screen.
 DEVICE_W     = 1600
 DEVICE_H     = 900
 SCREENSHOT_W = 1600
 SCREENSHOT_H = 900
-DISPLAY_W    = 1600
-DISPLAY_H    = 900
+
+# How much of the available screen we're willing to use (leaving room
+# for the toolbar, status bar, and window chrome/taskbar), and a
+# sensible floor so the canvas never gets too small to use.
+MIN_DISPLAY_W = 480
+MAX_SCREEN_FRACTION_W = 0.90
+MAX_SCREEN_FRACTION_H = 0.80
+CHROME_RESERVE_H = 110   # approx height used by toolbar + status labels
 
 # Read env vars from app.py (or use defaults for standalone)
 POINTS_FILE   = os.environ.get("OVERLAY_OUTPUT", "deploy_points.json")
 TITLE_HINT    = os.environ.get("OVERLAY_TITLE",  "COC Deployment Planner")
 SENTINEL_FILE = os.environ.get("OVERLAY_SENTINEL", None)  # Signals cancel if still exists on close
 
-# ── Coordinate helpers ────────────────────────────────────────
+# ── Coordinate helpers ──────────────────────────────────────────
+# These take the *current* on-screen display size explicitly, since
+# the window/canvas can now be resized (or start smaller to fit
+# smaller screens/laptops) instead of always being a fixed 1600x900
+# canvas.
 
-def display_to_device(dx, dy):
-    devx = int(dx / SCREENSHOT_W * DEVICE_W)
-    devy = int(dy / SCREENSHOT_H * DEVICE_H)
+def display_to_device(dx, dy, display_w, display_h):
+    devx = int(dx / display_w * DEVICE_W)
+    devy = int(dy / display_h * DEVICE_H)
     return devx, devy
 
-def device_to_display(devx, devy):
-    dx = int(devx / DEVICE_W * SCREENSHOT_W)
-    dy = int(devy / DEVICE_H * SCREENSHOT_H)
+def device_to_display(devx, devy, display_w, display_h):
+    dx = int(devx / DEVICE_W * display_w)
+    dy = int(devy / DEVICE_H * display_h)
     return dx, dy
 
 # ── ADB screenshot ────────────────────────────────────────────
@@ -111,18 +124,44 @@ class DeployOverlay:
     def __init__(self, root):
         self.root = root
         self.root.title(f"⚔  {TITLE_HINT}")
-        self.root.resizable(False, False)
+        # Allow the window to be resized so it can be fit to (or
+        # adjusted on) any screen — no longer locked to a fixed
+        # 1600x900 size.
+        self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
         self._set_window_icon()
 
         self.base_image  = None
         self.tk_image    = None
-        self.points_disp = []   # (dx, dy) display space
-        self.points_dev  = []   # (devx, devy) device space
+        self.points_dev  = []   # (devx, devy) device space — source of truth
+
+        # Compute an initial canvas size that fits comfortably on
+        # this screen, preserving the device's aspect ratio.
+        self.display_w, self.display_h = self._compute_fit_size()
+        self._resize_job = None
 
         self._build_ui()
         self._try_load_existing_points()
         self.refresh_screenshot()
+
+    def _compute_fit_size(self):
+        """Pick an on-screen canvas size that fits the current screen
+        while preserving the device's aspect ratio."""
+        try:
+            screen_w = self.root.winfo_screenwidth()
+            screen_h = self.root.winfo_screenheight()
+        except Exception:
+            screen_w, screen_h = DEVICE_W, DEVICE_H
+
+        max_w = max(MIN_DISPLAY_W, int(screen_w * MAX_SCREEN_FRACTION_W))
+        max_h = max(1, int(screen_h * MAX_SCREEN_FRACTION_H) - CHROME_RESERVE_H)
+
+        aspect = DEVICE_W / DEVICE_H
+        # Fit within (max_w, max_h) without ever upscaling past native res.
+        scale = min(max_w / DEVICE_W, max_h / DEVICE_H, 1.0)
+        w = max(MIN_DISPLAY_W, int(DEVICE_W * scale))
+        h = int(w / aspect)
+        return w, h
 
     def _set_window_icon(self):
         """Match gui_app.py branding by using the same icon.ico, if present."""
@@ -162,12 +201,15 @@ class DeployOverlay:
                   font=("Consolas", 10, "bold"), cursor="hand2").pack(side="right", padx=4)
 
         self.canvas = tk.Canvas(self.root,
-                                width=DISPLAY_W, height=DISPLAY_H,
+                                width=self.display_w, height=self.display_h,
                                 bg="#0d0d1a", cursor="crosshair",
                                 highlightthickness=0)
-        self.canvas.pack()
+        self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Button-1>", self.on_left_click)
         self.canvas.bind("<Button-3>", self.on_right_click)
+        # Keep the screenshot fitted to the window as the user
+        # resizes it (e.g. maximizing, or dragging to fit their screen).
+        self.canvas.bind("<Configure>", self._on_canvas_resize)
 
         self.status_var = tk.StringVar(value="Connecting to LDPlayer…")
         tk.Label(self.root, textvariable=self.status_var,
@@ -195,19 +237,40 @@ class DeployOverlay:
             f"|  saving to: {POINTS_FILE}"
         )
 
+    def _on_canvas_resize(self, event):
+        # Debounce: only redraw a short moment after resizing stops,
+        # so dragging the window edge doesn't trigger a redraw storm.
+        new_w, new_h = event.width, event.height
+        if new_w < 10 or new_h < 10:
+            return
+        self.display_w, self.display_h = new_w, new_h
+        if self._resize_job is not None:
+            self.root.after_cancel(self._resize_job)
+        self._resize_job = self.root.after(80, self._redraw)
+
     def _redraw(self):
+        self._resize_job = None
         if self.base_image is None:
             return
-        composite = draw_dots_on_image(self.base_image, self.points_disp)
+        # Points are stored in device space; convert to the *current*
+        # display size each time we draw, so resizing the window
+        # always keeps dots aligned with the screenshot.
+        points_disp = [
+            device_to_display(devx, devy, self.display_w, self.display_h)
+            for devx, devy in self.points_dev
+        ]
+        composite = draw_dots_on_image(
+            self.base_image.resize((self.display_w, self.display_h), Image.LANCZOS),
+            points_disp
+        )
         self.tk_image = ImageTk.PhotoImage(composite)
+        self.canvas.delete("all")
         self.canvas.create_image(0, 0, anchor="nw", image=self.tk_image)
 
     # ── Click handlers ────────────────────────────────────────
 
     def on_left_click(self, event):
-        dx, dy = event.x, event.y
-        devx, devy = display_to_device(dx, dy)
-        self.points_disp.append((dx, dy))
+        devx, devy = display_to_device(event.x, event.y, self.display_w, self.display_h)
         self.points_dev.append((devx, devy))
         self._redraw()
         self.status_var.set(
@@ -220,7 +283,6 @@ class DeployOverlay:
 
     def undo_point(self):
         if self.points_dev:
-            self.points_disp.pop()
             removed = self.points_dev.pop()
             self._redraw()
             self.status_var.set(
@@ -228,7 +290,6 @@ class DeployOverlay:
             )
 
     def clear_points(self):
-        self.points_disp.clear()
         self.points_dev.clear()
         self._redraw()
         self.status_var.set("All points cleared.")
@@ -272,8 +333,6 @@ class DeployOverlay:
             raw_pts = data.get("points", data.get("slots", []))
             for pt in raw_pts:
                 devx, devy = pt["x"], pt["y"]
-                dx, dy = device_to_display(devx, devy)
-                self.points_disp.append((dx, dy))
                 self.points_dev.append((devx, devy))
         except Exception as e:
             print(f"[overlay] Could not load existing points: {e}")
