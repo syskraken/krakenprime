@@ -5,26 +5,11 @@ import uuid
 import threading
 
 import sys
-import logging
 
 
 if getattr(sys, 'frozen', False):
     _bundle_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
     _cert_path = os.path.join(_bundle_dir, 'certifi', 'cacert.pem')
-    if os.path.exists(_cert_path):
-        os.environ['REQUESTS_CA_BUNDLE'] = _cert_path
-        os.environ['SSL_CERT_FILE'] = _cert_path
-
-if getattr(sys, 'frozen', False):
-    _bundle_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
-    _log_dir = os.path.dirname(sys.executable)
-    logging.basicConfig(
-        filename=os.path.join(_log_dir, 'telemetry_debug.log'),
-        level=logging.DEBUG,
-        format='%(asctime)s %(levelname)s %(message)s'
-    )
-    _cert_path = os.path.join(_bundle_dir, 'certifi', 'cacert.pem')
-    logging.debug(f"looking for cert at: {_cert_path} — exists: {os.path.exists(_cert_path)}")
     if os.path.exists(_cert_path):
         os.environ['REQUESTS_CA_BUNDLE'] = _cert_path
         os.environ['SSL_CERT_FILE'] = _cert_path
@@ -102,5 +87,5 @@ class TelemetryClient:
         try:
             import requests
             requests.post(f"{SERVER_URL}{path}", json=payload, timeout=REQUEST_TIMEOUT_S)
-        except Exception as e:
-            logging.debug(f"telemetry post failed: {type(e).__name__}: {e}")
+        except Exception:
+            pass   # never let a network hiccup interrupt the bot
