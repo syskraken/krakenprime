@@ -1,26 +1,3 @@
-"""
-deploy_overlay.py  —  COC Visual Deployment Planner
-────────────────────────────────────────────────────
-Can be launched standalone OR by app.py (which passes
-env vars to control the output file and window title).
-
-ENV VARS (set by app.py):
-  OVERLAY_OUTPUT   — path to write the JSON file (default: deploy_points.json)
-  OVERLAY_TITLE    — hint shown in the window title bar
-  OVERLAY_SENTINEL — path to temp sentinel file; overlay removes it on successful save
-                     (if sentinel still exists on close → user cancelled)
-
-Standalone usage:
-  python deploy_overlay.py
-
-Controls:
-  Left-click      → place a numbered dot
-  Right-click     → remove the last dot
-  Refresh         → grab a fresh screenshot
-  Clear All       → remove all dots
-  Save & Close    → write the JSON file and close
-"""
-
 # Then use ADB_PATH in your subprocess calls
 
 import tkinter as tk

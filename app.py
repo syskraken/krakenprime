@@ -1,16 +1,3 @@
-"""
-app.py  —  COC Farming Bot  (THE KRAKEN)
-─────────────────────────────────────────
-First run  : asks for troop/hero/spell counts, then runs a
-             guided setup battle to record slot + deploy coords.
-Later runs : loads saved config and farms automatically.
-
-Override flags
-  --reconfigure   wipe config and re-run the setup wizard
-  --setup-only    run setup wizard then exit (no farming)
-  --farm-only     skip setup, go straight to farming loop
-"""
-
 import cv2
 import numpy as np
 import subprocess
@@ -56,9 +43,9 @@ if sys.platform == "win32":
 # ── Paths ─────────────────────────────────────────────────────
 
 # Dynamic base directory — works on any machine, any folder name
-# When frozen by PyInstaller, __file__ points inside the temp _MEI* extraction
-# folder — templates/ was NOT bundled there by default; it lives next to the .exe.
-# sys.argv[0] always points to the actual .exe, so we use that as the runtime root.
+# When frozen by PyInstaller, data files (including templates/) are extracted
+# to the temp _MEI* folder (sys._MEIPASS). sys.argv[0] always points to the
+# actual .exe, so we use that as the runtime root for user-facing files.
 if getattr(sys, "frozen", False):
     BASE_DIR  = os.path.dirname(os.path.abspath(sys.argv[0]))
     TEMPLATES = os.path.join(sys._MEIPASS, "templates")
@@ -81,13 +68,6 @@ try:
     cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_SILENT)
 except Exception:
     pass
-
-# Check for local adb.exe on Windows
-ADB = "adb"
-if sys.platform == "win32":
-    local_adb = os.path.join(BASE_DIR, "adb.exe")
-    if os.path.exists(local_adb):
-        ADB = local_adb
 
 # ── ADB resolution ───────────────────────────────────────────
 def _resolve_adb():

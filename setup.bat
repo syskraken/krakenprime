@@ -1,12 +1,12 @@
 @echo off
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
-title THE KRAKEN
+title KRAKEN PRIME - Setup
 color 0E
 
 echo.
 echo  ============================================================
-echo    COC BOT DEPENDENCIES INSTALLER
+echo    KRAKEN PRIME - DEPENDENCIES INSTALLER
 echo  ============================================================
 echo.
 echo  This will install everything needed to run the bot:
@@ -18,7 +18,9 @@ echo.
 echo  Press any key to begin...
 pause >nul
 
-:: ── Check internet ────────────────────────────────────────────
+:: ============================================================
+:: [1/6] Internet check
+:: ============================================================
 echo.
 echo  [1/6] Checking internet connection...
 ping -n 1 google.com >nul 2>&1
@@ -30,14 +32,31 @@ if errorlevel 1 (
 )
 echo  [OK] Internet connection OK.
 
-:: ── Check / Install Python ────────────────────────────────────
+:: ============================================================
+:: [2/6] Python 3.11
+:: ============================================================
 echo.
 echo  [2/6] Checking Python...
 
-:: Check if Python is in PATH and is version 3.11
+set PYTHON_CMD=
+set PYTHON_LOCAL=%LOCALAPPDATA%\Programs\Python\Python311\python.exe
+set PYTHON_GLOBAL=C:\Python311\python.exe
+
+:: Prefer a known 3.11 install path first (guaranteed correct version)
+if exist "%PYTHON_LOCAL%" (
+    echo  [OK] Python 3.11 found at local install path.
+    set PYTHON_CMD="%PYTHON_LOCAL%"
+    goto :python_done
+)
+if exist "%PYTHON_GLOBAL%" (
+    echo  [OK] Python 3.11 found at global install path.
+    set PYTHON_CMD="%PYTHON_GLOBAL%"
+    goto :python_done
+)
+
+:: Fall back to PATH, but only if it is 3.11
 python --version >nul 2>&1
 if not errorlevel 1 (
-    :: Python found in PATH — check if it's 3.11
     for /f "tokens=2" %%V in ('python --version 2^>^&1') do set PY_VER=%%V
     echo  [~] Found Python !PY_VER! in PATH.
     echo !PY_VER! | findstr /B "3.11" >nul
@@ -46,28 +65,11 @@ if not errorlevel 1 (
         set PYTHON_CMD=python
         goto :python_done
     )
-    echo  [!] Wrong Python version ^(!PY_VER!^) — packages require Python 3.11.
-    echo  [~] Will use the Python 3.11 install path directly...
-)
-
-:: Check known Python 3.11 install locations
-set PYTHON_LOCAL=%LOCALAPPDATA%\Programs\Python\Python311\python.exe
-set PYTHON_GLOBAL=C:\Python311\python.exe
-
-if exist "%PYTHON_LOCAL%" (
-    echo  [OK] Python 3.11 found at local install path.
-    set PYTHON_CMD="%PYTHON_LOCAL%"
-    goto :python_done
-)
-
-if exist "%PYTHON_GLOBAL%" (
-    echo  [OK] Python 3.11 found at global install path.
-    set PYTHON_CMD="%PYTHON_GLOBAL%"
-    goto :python_done
+    echo  [!] Wrong Python version ^(!PY_VER!^) - the bot requires Python 3.11.
 )
 
 :: Download and install Python 3.11
-echo  [~] Python 3.11 not found. Downloading...
+echo  [~] Python 3.11 not found. Downloading installer...
 curl -L --progress-bar -o "%TEMP%\python_installer.exe" https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe
 if errorlevel 1 (
     echo  [!] Download failed. Please install Python 3.11 manually:
@@ -76,29 +78,25 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo  [~] Installing Python 3.11 (this may take a minute)...
-"%TEMP%\python_installer.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_pip=1
-if errorlevel 1 (
-    echo  [!] Python installation failed.
-    pause
-    exit /b 1
-)
+echo  [~] Installing Python 3.11 (this may take a few minutes)...
+start /wait "" "%TEMP%\python_installer.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_pip=1
 
-:: Re-check after install
 if exist "%PYTHON_LOCAL%" (
     set PYTHON_CMD="%PYTHON_LOCAL%"
     echo  [OK] Python 3.11 installed successfully.
     goto :python_done
 )
 
-echo  [!] Python installed but could not find python.exe.
+echo  [!] Python installed but python.exe was not found afterwards.
 echo      Please restart your PC and run setup.bat again.
 pause
 exit /b 1
 
 :python_done
 
-:: ── Upgrade pip ───────────────────────────────────────────────
+:: ============================================================
+:: [3/6] pip
+:: ============================================================
 echo.
 echo  [3/6] Upgrading pip...
 %PYTHON_CMD% -m pip install --upgrade pip --quiet 2>nul
@@ -108,11 +106,20 @@ if errorlevel 1 (
     echo  [OK] pip up to date.
 )
 
-:: ── Install Python packages ───────────────────────────────────
+:: ============================================================
+:: [4/6] Python packages
+:: ============================================================
 echo.
 echo  [4/6] Installing Python packages...
-echo        customtkinter, opencv-python, numpy, Pillow, pytesseract
+echo        customtkinter, opencv-python, numpy, Pillow,
+echo        pytesseract, requests, certifi
 echo.
+if not exist "%~dp0requirements.txt" (
+    echo  [!] requirements.txt is missing from this folder.
+    echo      Re-download the full package and try again.
+    pause
+    exit /b 1
+)
 %PYTHON_CMD% -m pip install -r "%~dp0requirements.txt"
 if errorlevel 1 (
     echo.
@@ -131,7 +138,9 @@ if errorlevel 1 (
 echo.
 echo  [OK] All Python packages installed.
 
-:: ── Check / Install Tesseract OCR ────────────────────────────
+:: ============================================================
+:: [5/6] Tesseract OCR
+:: ============================================================
 echo.
 echo  [5/6] Checking Tesseract OCR...
 
@@ -139,49 +148,42 @@ if exist "C:\Program Files\Tesseract-OCR\tesseract.exe" (
     echo  [OK] Tesseract already installed.
     goto :tesseract_done
 )
-
 if exist "C:\Program Files (x86)\Tesseract-OCR\tesseract.exe" (
-    echo  [OK] Tesseract already installed (x86^).
+    echo  [OK] Tesseract already installed ^(x86^).
     goto :tesseract_done
 )
 
-:: Check for bundled installer in the bot folder first
+:: Prefer the bundled installer shipped with the bot
 set TESS_INSTALLER=
 for %%F in ("%~dp0tesseract-ocr-w64-setup*.exe") do set TESS_INSTALLER=%%F
 
 if defined TESS_INSTALLER (
-    echo  [~] Found bundled Tesseract installer: !TESS_INSTALLER!
-    echo  [~] Installing Tesseract silently...
-    "!TESS_INSTALLER!" /S
-    timeout /t 15 /nobreak >nul
-    goto :tesseract_check
+    echo  [~] Found bundled Tesseract installer.
+    goto :tesseract_install
 )
 
 :: No bundled installer - download it
 echo  [~] Downloading Tesseract OCR...
-curl -L --progress-bar -o "%TEMP%\tesseract_installer.exe" https://github.com/UB-Mannheim/tesseract/releases/download/v5.3.3.20231005/tesseract-ocr-w64-setup-5.3.3.20231005.exe
+curl -L --progress-bar -o "%TEMP%\tesseract_installer.exe" https://github.com/UB-Mannheim/tesseract/releases/download/v5.5.0.20241111/tesseract-ocr-w64-setup-5.5.0.20241111.exe
 if errorlevel 1 (
     echo  [!] Download failed. Install manually:
     echo      https://github.com/UB-Mannheim/tesseract/wiki
     goto :tesseract_done
 )
-echo  [~] Installing Tesseract silently...
-"%TEMP%\tesseract_installer.exe" /S
-timeout /t 15 /nobreak >nul
+set TESS_INSTALLER=%TEMP%\tesseract_installer.exe
 
-:tesseract_check
+:tesseract_install
+echo  [~] Installing Tesseract silently (please wait)...
+start /wait "" "!TESS_INSTALLER!" /S
+
 if exist "C:\Program Files\Tesseract-OCR\tesseract.exe" (
     echo  [OK] Tesseract installed successfully.
     goto :tesseract_done
 )
 
-echo  [!] Silent install failed - launching manual installer...
+echo  [!] Silent install did not complete - launching manual installer...
 echo      IMPORTANT: Keep the default install path^!
-if defined TESS_INSTALLER (
-    "!TESS_INSTALLER!"
-) else (
-    "%TEMP%\tesseract_installer.exe"
-)
+start /wait "" "!TESS_INSTALLER!"
 
 if exist "C:\Program Files\Tesseract-OCR\tesseract.exe" (
     echo  [OK] Tesseract installed.
@@ -192,7 +194,9 @@ if exist "C:\Program Files\Tesseract-OCR\tesseract.exe" (
 
 :tesseract_done
 
-:: ── Check / Install ADB ───────────────────────────────────────
+:: ============================================================
+:: [6/6] ADB
+:: ============================================================
 echo.
 echo  [6/6] Checking ADB...
 
@@ -228,25 +232,36 @@ if exist "%~dp0adb.exe" (
 
 :adb_done
 
-:: ── Create run shortcut ───────────────────────────────────────
-echo.
-echo  Creating run.bat shortcut...
+:: ============================================================
+:: Dev-only: create run.bat when running from source
+:: ============================================================
+if exist "%~dp0gui_app.py" (
+    echo.
+    echo  Creating run.bat shortcut...
+    (
+        echo @echo off
+        echo cd /d "%%~dp0"
+        echo if exist "%%LOCALAPPDATA%%\Programs\Python\Python311\pythonw.exe" ^(
+        echo     start "" "%%LOCALAPPDATA%%\Programs\Python\Python311\pythonw.exe" "%%~dp0gui_app.py" %%*
+        echo     exit /b
+        echo ^)
+        echo if exist "C:\Python311\pythonw.exe" ^(
+        echo     start "" "C:\Python311\pythonw.exe" "%%~dp0gui_app.py" %%*
+        echo     exit /b
+        echo ^)
+        echo start "" pythonw "%%~dp0gui_app.py" %%*
+        echo exit /b
+    ) > "%~dp0run.bat"
+    echo  [OK] run.bat created.
+)
 
-(
-    echo @echo off
-    echo cd /d "%%~dp0"
-    echo set "SCRIPT=%%~dp0gui_app.py"
-    echo start "" pythonw "%%SCRIPT%%" %%*
-    echo exit /b
-) > "%~dp0run.bat"
-
-echo  [OK] run.bat created.
-
-:: ── Verify everything ─────────────────────────────────────────
+:: ============================================================
+:: Verify everything
+:: ============================================================
 echo.
 echo  Verifying installation...
 
-%PYTHON_CMD% -c "import cv2, numpy, PIL, pytesseract, customtkinter; print('  [OK] All Python packages working')"
+%PYTHON_CMD% -c "import cv2, numpy, PIL, pytesseract, customtkinter, requests, certifi; print('  [OK] All Python packages working')"
 if errorlevel 1 (
     echo  [!] One or more packages failed to import.
     echo      Try manually: pip install -r requirements.txt
@@ -264,20 +279,20 @@ if exist "C:\Program Files\Tesseract-OCR\tesseract.exe" (
 if exist "%~dp0adb.exe" (
     echo  [OK] adb.exe present in bot folder.
 ) else (
-    echo  [!] adb.exe missing from bot folder.
+    adb --version >nul 2>&1
+    if not errorlevel 1 (
+        echo  [OK] ADB available in system PATH.
+    ) else (
+        echo  [!] adb.exe missing from bot folder.
+    )
 )
 
-:: ── Done ──────────────────────────────────────────────────────
+:: ============================================================
+:: Done - show the right next step for this machine
+:: ============================================================
 echo.
 echo  ============================================================
 echo    INSTALLATION COMPLETE!
 echo  ============================================================
-echo.
-echo  Before starting the bot:
-echo    1. Open LDPlayer
-echo    2. Settings ^> Other settings ^> ADB Debugging ^> Enable Local Connection
-echo    3. Open Clash of Clans ^> go to main village screen
-echo.
-echo  Then double-click build.bat to build the KrakenPrime executable.
 echo.
 pause
