@@ -1,4 +1,4 @@
-# Installatain
+# Installation
 
 **Download using Terminal**
 1. git clone: https://github.com/syskraken/krakenprime.git
